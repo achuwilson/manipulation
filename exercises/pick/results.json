@@ -1,12 +1,17 @@
 {
     "tests": [
         {
-            "name": "Test forward kinematics",
-            "score": 2,
-            "max_score": 2
+            "name": "Testing X_CW",
+            "score": 1,
+            "max_score": 1
         },
         {
-            "name": "Test jacobian",
+            "name": "Testing X_WB",
+            "score": 1,
+            "max_score": 1
+        },
+        {
+            "name": "Testing grasp pose",
             "score": 2,
             "max_score": 2
         }
