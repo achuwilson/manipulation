@@ -1,22 +1,17 @@
 {
     "tests": [
         {
-            "name": "Testing X_CW",
-            "score": 1,
-            "max_score": 1
+            "name": "compose_circualr_key_frames",
+            "score": 4,
+            "max_score": 4
         },
         {
-            "name": "Testing X_WB",
-            "score": 1,
-            "max_score": 1
-        },
-        {
-            "name": "Testing grasp pose",
+            "name": "construct_v_w_trajectories",
             "score": 2,
             "max_score": 2
         }
     ],
     "leaderboard": [],
     "execution_time": "0.00",
-    "score": 4
+    "score": 6
 }
