@@ -1,17 +1,12 @@
 {
     "tests": [
         {
-            "name": "compose_circualr_key_frames",
+            "name": "Test Simple QP problem",
             "score": 4,
             "max_score": 4
-        },
-        {
-            "name": "construct_v_w_trajectories",
-            "score": 2,
-            "max_score": 2
         }
     ],
     "leaderboard": [],
     "execution_time": "0.00",
-    "score": 6
+    "score": 4
 }
