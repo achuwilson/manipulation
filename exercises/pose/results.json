@@ -1,0 +1,33 @@
+{
+    "tests": [
+        {
+            "name": "Test filtered pointcloud",
+            "score": 0.0,
+            "max_score": 4,
+            "output": "Test Failed: 4796 not less than or equal to 80 : You have too many false positives (too many outliers)\n"
+        },
+        {
+            "name": "Test RPY with loose bounds",
+            "score": 1,
+            "max_score": 1
+        },
+        {
+            "name": "Test RPY with tight bounds",
+            "score": 1,
+            "max_score": 1
+        },
+        {
+            "name": "Test XYZ with loose bounds",
+            "score": 1,
+            "max_score": 1
+        },
+        {
+            "name": "Test XYZ with tight bounds",
+            "score": 1,
+            "max_score": 1
+        }
+    ],
+    "leaderboard": [],
+    "execution_time": "0.08",
+    "score": 4.0
+}
