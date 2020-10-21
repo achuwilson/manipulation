@@ -55,6 +55,8 @@ href="https://www.youtube.com/channel/UChfUOAhz7ynELF-s_1LPpWg">Lecture  videos 
 
 <!-- EVERYTHING ABOVE THIS LINE IS OVERWRITTEN BY THE INSTALL SCRIPT -->
 <chapter style="counter-reset: chapter 6"><h1>Force Control</h1>
+  <a style="float:right; margin-top:-80px;" target="force" href="https://colab.research.google.com/github/RussTedrake/manipulation/blob/master/force.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open Corresponding Notebook In Colab"/></a>
+  <div style="clear:right;"></div>
 
   <p>Over the last few chapters, we've developed a great initial toolkit for
   perceiving objects (or piles of objects) in a scene, planning grasps, and
@@ -75,7 +77,7 @@ href="https://www.youtube.com/channel/UChfUOAhz7ynELF-s_1LPpWg">Lecture  videos 
   how easy that scene is for your suction gripper, but suction alone isn't going
   to solve all of our problems either.)</p>
 
-  <figure><<iframe width="560" height="315"
+  <figure><iframe width="560" height="315"
   src="https://www.youtube.com/embed/XqRczI4Fepk?mute=1&rel=0" frameborder="0"
   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope;
   picture-in-picture" allowfullscreen></iframe><figcaption>Just for fun, I asked
@@ -131,6 +133,9 @@ href="https://www.youtube.com/channel/UChfUOAhz7ynELF-s_1LPpWg">Lecture  videos 
     f^{c_i};$ in the case of a point finger this Jacobian is always the identity
     matrix, and there is only one point at which contact can be made, so there
     is no meaningful reason to distinguish between multiple forces.</p>
+
+    <todo>Add Jiaji's video?</todo>
+    <todo>Check yourself: can the finger move the box?  (only if the coefficient of friction is bigger).</todo>
 
     <subsection><h1>(Direct) force control</h1>
 
@@ -200,6 +205,11 @@ href="https://www.youtube.com/channel/UChfUOAhz7ynELF-s_1LPpWg">Lecture  videos 
         start it moving, but friction eventually brings the box and therefore
         also the finger to rest.  For large values, the finger will keep pushing
         the box until it runs into the far wall.</p>
+
+        <p><a target="force"
+          href="https://colab.research.google.com/github/RussTedrake/manipulation/blob/master/force.ipynb#scrollTo=1B0hQuLQZMD0"><img
+          src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
+          </p>
       
       </example>
 
@@ -210,7 +220,7 @@ href="https://www.youtube.com/channel/UChfUOAhz7ynELF-s_1LPpWg">Lecture  videos 
       straight-line approach will reach the box).</p>
 
       <p>This is one of the reasons that researchers working on legged robots
-      like force control.  On a force-capable walking robot, we might mimic
+      also like force control.  On a force-capable walking robot, we might mimic
       position control during the "swing phase", to get our foot approximately
       where we are hoping to step.  But then we switch to a force control mode
       to actually set the foot down on the ground.  This can significantly
@@ -220,13 +230,242 @@ href="https://www.youtube.com/channel/UChfUOAhz7ynELF-s_1LPpWg">Lecture  videos 
 
     <subsection><h1>A force-based "flip-up" strategy</h1>
 
+      <p>Here is my proposal for a simple strategy for flipping up the box. Once
+      in contact, we will use the contact force from the finger to apply a
+      moment around the bottom left corner of the box to generate the rotation.
+      But we'll add constraints to the forces that we apply so that the bottom
+      corner does not slip. </p>
+
+      <figure><img style="margin-top:-20px; width:60%" src="data/force_flip_up.png"><figcaption>Flipping the box.  <a href="data/force_flip_up.html">Click here</a> for an animation of the controller we'll write in the example below.  But it's worth running the code, where you can see the contact force visualization, too!</figcaption></figure>
+
+      <p>These conditions are very natural to express in terms of forces.  And
+      once again, we can implement this strategy with very little information
+      about the box.  The position of the finger will evolve naturally as we
+      apply the contact forces.  It's harder for me to imagine a how to write an
+      equally robust strategy using a (high-gain) position-controller finger; it
+      would likely require many more assumptions about the geometry (and
+      possibly the mass) of the box.</p>
+
+      <example><h1>A force-based flip-up strategy</h1>
+      
+        <p>Let's encode the textual description above.  The friction cone
+        provides (linear inequality) constraints on the forces we want to apply.
+        Within those constraints, we would like to rotate up the box.
+        Constrained least-squares is as natural a formulation for this as any!
+        Here is one version: \begin{align*}\min_{f^C_W} \quad& \left|
+        f^{C}_{C_x} - \text{PID}(\theta_d, \theta) \right|^2,\\ \subjto \quad &
+        |f^C_{W_x}| \le \hat\mu_A (\hat{m}g -
+        f^C_{W_z}), \\  & f^C_{C_z} \ge 0,
+        \qquad |f^C_{C_x}| \le \hat\mu_C f^C_{C_z}, \\ \text{with} \quad &
+        {}^WR^C(\theta) = \begin{bmatrix} -\sin\theta & -\cos\theta \\
+        \cos\theta & -\sin\theta \end{bmatrix}.\end{align*} I've used
+        $\text{PID}$ here as shorthand for a simple
+        proportional-integral-derivative term. Implementing this strategy
+        assumes:
+        <ul style="margin-top:-10px; margin-bottom:5px"><li>We have some
+        approximation, $\hat\theta$, for the orientation of the box.  We could
+        obtain this from a point cloud normal estimation, or even from tracking
+        the path of the fingers.</li>
+        <li>We have conservative estimates of the coefficients of static
+        friction between the wall and the box, $\hat\mu^A$, and between the
+        finger and the box, $\hat\mu^C$, as well as the box mass, $\hat{m}.$
+        (You should experiment and decide for yourself whether these estimates can be loose).</li>
+        <li>We assume that $\theta_d(t)$ changes slowly (in particular, that the
+        box accelerations are small), so that we can mostly ignore the unknown
+        inertial terms from the box .</li>
+<!---        
+        <li>We assume that the finger makes contact roughly near the top of the
+        box, but there is no other dependency on the size of the box.</li>
+        -->        
+        </ul> Apart from the finger making some contact, there are no other
+        assumptions about the shape of the box!</p>
+
+        <p><a target="force"
+          href="https://colab.research.google.com/github/RussTedrake/manipulation/blob/master/force.ipynb#scrollTo=VBc7zDKlElKu"><img
+          src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
+          </p>
+
+        <p>To understand this controller, let's break down the dynamics of the
+        task.</p>  
+        
+        <p>Once the box has rotated up off the bin bottom, the only forces on
+        the box are the gravitational force, the force that the bin applies on
+        the box corner, call it $f^A$, and the contact force, $f^C$, that the
+        finger applies on the box.  By convention, the contact frames $A$ and
+        $C$ have the $z$ axis aligned with the contact normal (pointing into the
+        box).  Remember the contact geometry we use for the cracker box has
+        small spheres in the corners; so both of these contacts are "sphere on
+        box", with the box normals defining the contact normals (e.g. the $x$
+        axis is aligned with the wall of the box), and ${}^WR^A = I$.  The
+        friction cone constraints are: \begin{gather*}f^A_{W_z} \ge
+        0, \qquad |f^A_{W_x}| \le \mu^A f^A_{W_z}, \\ f^C_{C_z}
+        \ge 0, \qquad |f^C_{C_x}| \le \mu^C f^C_{C_z}.\end{gather*}  The
+        orientation of frame $C$ is a function of the box orientation,
+        ${}^WR^C(\theta)$, and is written above.</p>
+
+        <todo>Add diagrams for the frames</todo>
+
+        <p>The dynamics of the box can be written as \begin{gather*} m\ddot{x} =
+        f^A_{W_x} + f^C_{W_x} \\ m \ddot{z} = f^A_{W_z} + f^C_{W_z} - mg \\
+        I\ddot\theta = ^Ap^{CM}_W \times \begin{bmatrix} 0 \\ -mg\end{bmatrix} +
+        {}^Ap^C_W \times f^C_W, \end{gather*} where $I$ is the moment of inertia
+        of the box taken around the top corner, and $p^{CM}$ is the position of
+        the center of mass.  We don't want our controller to depend on most of
+        these parameters, but it helps to understand them!  If we move slowly
+        (the velocities and accelerations are nearly zero), then we can write
+        $$f^A_{W_x} = -f^C_{W_x}, \qquad f^A_{W_z} = mg - f^C_{W_z}.$$ Taken
+        together, the friction cone constraints on the bin imply the following
+        constraints on our finger contact: $$|f^C_{W_x}| \le \mu_A (mg -
+        f^C_{W_z}).$$  Note that the <a
+        href="http://underactuated.mit.edu/multibody.html#bilateral">full
+        dynamic derivation</a> is not too much harder; I did it on paper by
+        writing ${}^{CM}p^A = [-\frac{h}{2}, -\frac{w}{2}]^T,$ with the height,
+        $h$, and width, $w$ of the box. Then one can write the no-slip at the
+        bin constraint as $\phi(q) = {}^{CM}p^A_{W_x} = \text{constant}$ which
+        implies that $\ddot{\phi} = 0,$ which gives the full expression for
+        $f^A_{W_x}$ (as long as we're in the friction cone).</p>
+
+        <p>Now here's a nice approximation.  By choosing to make contact near
+        the bottom of the box (since we know where the bin is), we can
+        approximate $${}^Ap^{C}_W \times f^C_W \approx -{}^Ap^C_{C_z}
+        f^C_{C_x}.$$  In words, the moment produce by the finger contact is
+        approximately the tangential force on the box (times the width of the
+        box).  I therefore claim that choosing $$f^{C_d}_{C_x} =
+        \text{PID}(\theta_d, \theta),$$ is a good strategy for regulating the
+        orientation of the box.  It does not assume we know the box geometry nor
+        inertial properties.</p>
+
+        <p>That's a lot of details, but all to justify a very simple and robust
+        controller.</p>
+
+        <todo>Generate random boxes.</todo>
+
+      </example>
+
+      <p>We have multiple controllers in this example.  The first is the
+      low-level force controller that takes a desired contact force and sends
+      commands to the robot to attempt to regulate this force.  The second is
+      the higher-level controller that is looking at the orientation of the box
+      and deciding which forces to request from the low-level controller.</p>
+
+      <p>Please also understand that this is not some unique or optimal strategy
+      for box flipping.  I'm simply trying to demonstrate that sometimes
+      controllers which might be difficult to express otherwise can easily be
+      expressed in terms of forces!</p>
+
     </subsection>
 
-    <subsection><h1>Indirect force control (impedance and admittance)</h1>
+    <subsection><h1>Indirect force control</h1>
+
+      <p>There is a nice philosophical alternative to controlling the contact
+      interactions by specifying the forces directly.  Instead, we can program
+      our robot to act like a (simple) mechanical system that reacts to contact
+      forces in a desired way.  This philosophy was described nicely in an
+      important series of papers by Ken Salisbury <elib>Salisbury80</elib>
+      introducing <i>stiffness control</i> and then Neville Hogan introducing
+      <i>impedance control</i> <elib>Hogan85a+Hogan85b+Hogan85c</elib>.</p>
+
+      <p>This approach is conceptually very nice.  With only knowledge of the
+      parameters of the robot itself (not the environment), we can write a
+      controller so that when we push on the end-effector, the end-effector
+      pushes back (using the entire robot) as if you were pushing on, for
+      instance, a simple spring-mass-damper system.  Rather than attempting to
+      achieve manipulation by moving the end-effector rigidly through a series
+      of position commands, we can move the set points (and perhaps stiffness)
+      of a soft virtual spring, and allow this virtual spring to generate our
+      desired contact forces.</p>
+      
+      <p>This approach can also have nice advantages for guaranteeing that your
+      robot won't go unstable even in the face of unmodeled contact
+      interactions.  If the robot acts like a dissipative system and the
+      environment is a dissipative system, then the entire system will be
+      stable.  Arguments of this form can ensure stability for even very complex
+      system, building on the rich literature on <i>passivity theory</i> or more
+      generally <i>Port-Hamiltonian</i>
+      systems<elib>Duindam09</elib>.</p>
+
+      <p>Our simple model with a point finger is ideal for understanding the
+      essence of indirect force control.  The original equations of motion of
+      our system are $$m\begin{bmatrix}\ddot{x} \\ \ddot{z} \end{bmatrix} = u +
+      f^c.$$  We can write a simple controller to make this system act, instead,
+      like (passive) mass-spring-damper system: $$m \begin{bmatrix}\ddot{x} \\
+      \ddot{z} \end{bmatrix} + b \begin{bmatrix} \dot{x} \\ \dot{z}
+      \end{bmatrix} + k \begin{bmatrix} x - x_d \\ z - z_d \end{bmatrix} =
+      f^c,$$ with the rest position of the spring at $(x_d, z_d).$  The
+      controller that implements this follows easily; in the point finger case
+      has exactly the familiar form of a proportional-derivative (PD)
+      controller!</p>
+
+      <p>Technically, if we are just programming the stiffness and damping, as
+      I've written here, then a controller of this form would commonly be
+      referred to as "stiffness control", which is a subset of impedance
+      control.  We could also change the effective mass of the system; this
+      would be impedance control in its full glory. <!--Importantly, changing
+      the effective mass can be done without estimating the accelerations, but
+      it does require measuring the contact force.-->  My impression, though, is
+      that changing the effective mass is most often considered not worth the
+      complexity that comes from the extra sensing and bandwidth
+      requirements.</p>
+
+      <p>The literature on indirect force control has a lot of terminology and
+      implementation details that are important to get right in practice.  Your
+      exact implementation will depend on, for instance, whether you have access
+      to a force sensor and whether you can command forces/torque directly.  The
+      performance can vary significantly based on the bandwidth of your
+      controller and the quality of your sensors.  See e.g.
+      <elib>Villani08</elib> for a more thorough survey (and also some fun older
+      videos), or <elib>Whitney87</elib> for a nice earlier perspective.</p>
+
+      <!--
+      <p>We can also program the response if we have a position-controlled robot with a force-torque sensor.  This is called <i>admittance control</i>.  In its simplest form, we can say that the original equations of motion already contain a PD controller, and our only command input is to modulate the setpoints of that controller.  For a single degree of freedom, we have $$m\ddot{q} + \text{unmodelled terms} = k_p(q_d - q) + k_d(\dot{q}_d - \dot{q}) + f^c.$$ </p>
+      -->
+
+      <example><h1>Teleop with impedance control</h1>
+        
+        <p>I didn't give you a teleop interface with direct force control; it
+        would have been very difficult to use!  Moving the robot by positioning
+        the set points on virtual springs, however, is quite natural. Take a
+        minute to try moving the box around, or even flipping it up.</p>
+
+        <p><a target="force"
+          href="https://colab.research.google.com/github/RussTedrake/manipulation/blob/master/force.ipynb#scrollTo=7q0A14bAilIX"><img
+          src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
+          </p>
+
+        <p>To help your intuition, I've made the bin and the box slightly
+        transparent, and added a visualization (in orange) of the virtual finger
+        or gripper that you are moving with the sliders.</p>
+
+      </example>
+
+    </subsection>
+
+    <subsection><h1>An impedance-control-based "flip-up" strategy</h1>
+
+      <p>Let's embrace indirect force control to come up with another approach
+      to flipping up the box.  Flipping the box up in the middle of the bin
+      required very explicit reasoning about forces in order to stay inside the
+      friction cone in the bottom left corner of the box.  But there is another
+      strategy that doesn't require as precise control of the forces.  Let's
+      push the box into the corner, and <i>then</i> flip it up.</p>
+
+      <figure><img style="width:70%" src="data/impedance-based-flip-up.jpeg"></figure>
     
+      <p>To make this one happen, I'd like to imagine creating a virtual spring
+      -- you can think of it like a taught rubber band -- that we attach from
+      the finger to a point near the wall just a little above the top left
+      corner of the box.  The box will act like a pendulum, rotating around the
+      top corner, with the rubber band creating the moment.  At some point the
+      top corner will slip, but the very same rubber band will have the finger
+      pushing the box down from the top corner to complete the maneuver.</p>
+
+      <example><h1>An impedance-control-based flip-up strategy</h1>
+      
+      </example>
+
     </subsection>
 
-    <subsection><h1>An impedance-based "flip-up" strategy</h1>
+    <subsection><h1>Hybrid control</h1>
     
     </subsection>
 
@@ -234,25 +473,165 @@ href="https://www.youtube.com/channel/UChfUOAhz7ynELF-s_1LPpWg">Lecture  videos 
 
   <section><h1>Peg in hole</h1>
 
-    <p>Call-out to the classic great example for force control.  Remote-centered
-    compliance...</p>
-  
-    <p>Also for opening doors, tool use, ...</p>
+    <p>One of the classic problems for manipulator force control, inspired by
+    robotic assembly, is the problem of mating two parts together with under
+    tight kinematic tolerances.  Perhaps the cleanest and most famous version of
+    this is the problem of inserting a (round) peg into a (round) hole.  If your
+    <a href="https://en.wikipedia.org/wiki/Square_peg_in_a_round_hole">peg is
+    square and your hole is round</a>, I can't help.  Interestingly, much of the
+    literature on this topic in the late 1970's and early 1980's came out of MIT
+    and the Draper Laboratory.</p>
+
+    <figure><img height="150px" src="data/peg-in-hole.png"> <img style="margin-left:20px; margin-right:50px;" height="150px" src="data/peg-in-hole-force.png"> <img height="150px" src="data/peg-in-hole-moment.png"><figcaption>(Left) the
+    "peg in hole" insertion problem with kinematic tolerance $c$.  (Middle) the
+    desired response to a contact force.  (Right) the desired response to a
+    contact moment.  Figures reproduced (with some symbols removed) from
+    <elib>Drake78</elib>.
+    </figcaption></figure>
+
+    <p>For many peg insertion tasks, it's acceptable to add a small <a
+    href="https://en.wikipedia.org/wiki/Chamfer_(geometry)">chamfer</a> to the
+    part and/or the top of the hole.  This allows small errors in horizontal
+    alignment to be accounted for with a simple compliance in the horizontal
+    direction.  Misalignment in orientation is even more interesting.  Small
+    misalignments can cause the object to become "jammed", at which point the
+    frictional forces become large and ambiguous; we really want to avoid this.
+    Again, we can avoid jamming by allowing a rotational compliance at the
+    contact.  I think you can see why this is a great example for force
+    control!</p>
+
+    <p>The key insight here is that the rotational stiffness that we want should
+    result in rotations around the part/contact, not around the gripper.  We can
+    program this with stiffness control; but for very tight tolerances the
+    sensing and bandwidth requirements become a real limitation.  One of the
+    coolest results in force control is the realization that a clever physical
+    mechanism can be used to produce a remote-centered compliance completely
+    mechanically, with infinite bandwidth and no sensing required
+    <elib>Drake78</elib>!</p>
+
+    <figure><img height="180px" src="data/passive_remote_center_compliance.png">
+    <img style="margin-left:20px; margin-bottom:15px" height="150px"
+    src="data/Remote_Center_of_Compliance.svg"><figcaption>A passive
+    remote-center compliance device.  (Left) concept schematic from
+    <elib>Drake78</elib>.  (Right) schematic of a mechanical implementation;
+    image credit for <a
+    href="https://en.wikipedia.org/wiki/Remote_Center_Compliance#/media/File:Remote_Center_of_Compliance.svg">Arne
+    Nordmann, 2008</a>.  See <a href="https://www.ati-ia.com/products/compliance/Compensator_main.aspx">here</a> for some example products, and <a href="https://www.youtube.com/watch?v=qFTUFHGGZIg">here</a> for a nice (older) video.</figcaption></figure>
+
+    <p>Interestingly, the peg-in-hole problem inspired to incredibly important
+    and influential ideas in mechanics and control, but also in motion planning
+    <elib>Lozano-Perez84</elib>.  The general ideas are quite relevant and applicable for a wide variety of tasks for which compliant contact is a reasonable strategy, such as opening doors, tool use, etc.</p>
+
   </section>
 
-  <section><h1>Force control with the arm</h1>
+  <section><h1>Manipulator control</h1>
 
-    <subsection><h1>Direct Force Control</h1>
+    <p>I think that using the floating finger/gripper is a good way to
+    understand the main concepts of force control without the details.  But now
+    it's time to actually implement those strategies using joint commands that
+    we can send to the arm.</p>
 
-    </subsection>
+    <p>Our starting point is understanding that the equations of motion for a
+    fully-actuated robotic manipulator have a very structured form:
+    $$M(q)\ddot{q} + C(q,\dot{q})\dot{q} = \tau_g(q) + u + \sum_i
+    J^T_i(q)F^{c_i}.$$  The left side of the equation is just a generalization
+    of "mass times acceleration", with the mass matrix, $M$, and the Coriolis
+    terms $C$.  The right hand side is the sum of the (generalized) forces, with
+    $\tau_g(q)$ capturing the forces due to gravity, $u$ the joint torques
+    supplied by the motors, and $F^{c_i}$ is the spatial force due to the $i$th
+    contact, where $J_i(q)$ is the $i$th "contact Jacobian".  I introduced a
+    version of these briefly when we described multibody dynamics for dropping
+    random objects into the bin, and have more notes <a
+    href="http://underactuated.mit.edu/multibody.html">available here</a>.  For
+    the purposes of the remainder of this chapter, we can assume that the robot
+    is bolted to the table, so does not have any floating joints; I've therefore
+    used $\dot{q}$ and $\ddot{q}$ instead of $v$ and $\dot{v}$.</p>
 
-    <subsection><h1>Impedance and Admittance Control</h1>
+    <subsection><h1>Inverse dynamics control</h1>
+
+      <p>Let us ignore the contact terms for a moment: $$M(q)\ddot{q} +
+      C(q,\dot{q})\dot{q} = \tau_g(q) + u.$$  The <i>forward dynamics</i>
+      problem, which we use during simulation, is to compute the
+      accelerations, $\ddot{q}$, given the joint torques, $u$, (and $q,
+      \dot{q}$).  The <i>inverse dynamics</i>
+      problem, which we can use in control, is to compute $u$ given $\ddot{q}$
+      (and $q, \dot{q}$).  As a system, it looks like</p>
+
+      <div>
+        <script type="text/javascript">
+        var inverse_dynamics = { "name": "InverseDynamics", 
+          "input_ports" : ["estimated_state", "desired_acceleration"],
+          "output_ports" : ["actuation_input"]
+          };
+        document.write(system_html(inverse_dynamics, "https://drake.mit.edu/doxygen_cxx/classdrake_1_1systems_1_1controllers_1_1_inverse_dynamics.html"));
+        </script>
+      </div>
+
+      <p>This system implements the controller: $$u = M(q)\ddot{q}_d +
+      C(q,\dot{q})\dot{q} - \tau_g(q),$$ so that the resulting dynamics are
+      $M(q)\ddot{q} = M(q)\ddot{q}_d.$  Since we know that $M(q)$ is invertible,
+      this implies that $\ddot{q} = \ddot{q}_d$.</p>
+
+      <p>In practice, we only have estimates of the dynamics (mass matrix, etc) and even the states $q$ and $\dot{q}$.  We will need to account for these errors when we determine the acceleration commands to send.  For example, if we wanted to follow a desired joint trajectory, $q_0(t)$, we do not just differentiate the trajectory twice and command $\ddot{q}_0(t)$, but we could instead command e.g. $$\ddot{q}_d = \ddot{q}_0(t) + K_p(q_0(t) - q) + K_d(\dot{q}_0(t) - \dot{q}).$$</p>
     
     </subsection>
+
+    <subsection><h1>Direct force control</h1>
+
+      <p>Let's bring back our contact forces, but assume that we are only making
+      contact at a single, known, point on the robot: $$M(q)\ddot{q} +
+      C(q,\dot{q})\dot{q} = \tau_g(q) + u + J^T(q)F^c.$$  <!--Very often in
+      manipulation we assume that our dynamics are <i>quasi-static</i>: that the
+      velocities and accelerations are small enough that the terms which depend
+      on them can be safely ignored.  In a quasi-static analysis, we have the force-balance equations $$\tau_g(q) + u = - J^T(q) F^c.$$  As a result, we can command the desired force by compensating for gravity and any other known forces</p>-->
+
+    </subsection>
+
+    <subsection><h1>Joint impedance control</h1>
+    
+    </subsection>
+
+    <subsection><h1>End-effector impedance control</h1>
+    </subsection>
+
+    <subsection><h1>Impedance control on the iiwa</h1>
+
+      <p>As we discussed in the hardware chapter, the iiwa provides provides torque sensing and control via compliant elements at the joints.  The iiwa low-level controller (provided with the robot) actually provides an impedance control interface</p>
   
+      <subsubsection><h1>Dynamics of elastic-joint robots</h1>
+      
+      </subsubsection>
+    </subsection>
+
+
   </section>
 
-  <section><h1>Impedance control on the iiwa</h1>
+
+
+    <!--
+
+    PD Control.  Inverse dynamics control.  (any material from slotine?  adaptive?  sliding mode?)  deluca "dynamic control of a single axis" http://www.diag.uniroma1.it/~deluca/rob1_en/16_DynamicControlSingleAxis.pdf
+      Spong model of elastic joints <elib>Spong87</elib> (deluca showed a video in his RSS talk)
+        exact gravity cancellation - https://www.youtube.com/watch?v=tKSCn2gN7Ks&t=9960s
+      Maybe -- planar IIWA sdf from andres? (how well does it render in matplotlib)
+    Tracking an end-effector trajectory
+      Operation-space control
+      Hybrid Control
+      Impedance control
+      Remote compliance (http://manipulation.csail.mit.edu/lecture_notes/Lec7.pdf)
+      Estimating contact location -- contact particle filter, etc.
+        haddadin videos (e.g. http://www.diag.uniroma1.it/~deluca/IIT_Seminar_Jan23_2019_ADL.pdf)
+      De Luca pHRI
+        https://www.youtube.com/playlist?list=PLvAUmIzqq6oaRtwX9l9sjDhcNMXNCGSN0
+
+        slotine wam ball throwing.  (have video, but here is maybe the most relevant paper? (by niemeyer) https://journals.sagepub.com/doi/pdf/10.1177/027836499101000206)
+
+        impedance control wikipedia article is great
+        https://en.wikipedia.org/wiki/Impedance_control#Joint_space
+  --> 
+
+  <section><h1>Putting it all together</h1>
+  
   
   </section>
 
